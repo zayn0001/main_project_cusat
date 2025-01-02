@@ -1,37 +1,53 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useDebugValue, useEffect, useRef, useState } from "react";
 
 export default function Record() {
   const [descriptions, setDescriptions] = useState<string[]>([]);
   const [transcript, setTranscript] = useState<string>("");
   const [isListening, setIsListening] = useState<boolean>(true);
-  const videoRef = useRef<HTMLVideoElement | null>(null); // Reference for the video element
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Ref to store the latest descriptions array
+  const descriptionsRef = useRef<string[]>([]);
+  const transcriptRef = useRef<string>("");
+
 
   useEffect(() => {
-    const cameraInterval = setInterval(() => {
-      // Placeholder function to simulate capturing a frame and getting its description
-      const description = captureFrameDescription();
-      setDescriptions((prev) => [...prev, description]);
-    }, 60000); // Capture frame every 1 minute
+    const cameraInterval = setInterval(async () => {
+      const description = await captureFrameDescription();
+      console.log(description);
 
-    const summaryInterval = setInterval(() => {
-      // Placeholder function to summarize descriptions
-      const summary = summarizeDescriptions(descriptions);
-      console.log("Summary:", summary);
-      setDescriptions([]); // Reset descriptions after summarizing
-    }, 600000); // Generate summary every 10 minutes
+      // Update state and ref
+      setDescriptions((prev) => {
+        const updatedDescriptions = [...prev, description];
+        descriptionsRef.current = updatedDescriptions; // Keep ref in sync
+        return updatedDescriptions;
+      });
+    }, 60000); // Capture frame every 10 seconds
 
-    const transcriptInterval = setInterval(() => {
-      // Placeholder function to store the transcript
-      storeTranscript(transcript);
-    }, 300000); // Store transcript every 5 minutes
+    const summaryInterval = setInterval(async () => {
+      console.log("Summarizing descriptions:", descriptionsRef.current);
+      const summaryk = await summarizeDescriptions(descriptionsRef.current);
+      console.log(summaryk);
+      // Clear the ref and state
+      descriptionsRef.current = [];
+      setDescriptions([]);
+
+
+
+      //console.log("Summarizing descriptions:", descriptionsRef.current);
+      const transcripttotal = await summarizeTranscript(transcriptRef.current);
+      console.log(transcripttotal);
+      // Clear the ref and state
+      transcriptRef.current = "";
+      setTranscript("")
+    }, 600000); // Summarize every 1 minute
 
     return () => {
       clearInterval(cameraInterval);
       clearInterval(summaryInterval);
-      clearInterval(transcriptInterval);
     };
-  }, [descriptions, transcript]);
+  }, []);
 
   useEffect(() => {
     if (!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)) {
@@ -50,7 +66,12 @@ export default function Record() {
       let interimTranscript = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
-          setTranscript((prev) => prev + event.results[i][0].transcript + " ");
+          setTranscript((prev) => {
+            const updatedTransript = prev + event.results[i][0].transcript + " ";
+            transcriptRef.current = updatedTransript
+            return transcriptRef.current
+          });
+          
         } else {
           interimTranscript += event.results[i][0].transcript;
         }
@@ -98,16 +119,111 @@ export default function Record() {
     };
   }, []);
 
-  const captureFrameDescription = (): string => {
-    return "Frame description placeholder"; // Replace with actual logic
+  const captureFrameDescription = async (): Promise<string> => {
+    if (!videoRef.current) {
+      console.error("Video feed is not available.");
+      return "No video feed available.";
+    }
+  
+    try {
+      // Create a canvas to capture the current frame
+      const canvas = document.createElement("canvas");
+      const video = videoRef.current;
+  
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+  
+      const context = canvas.getContext("2d");
+      if (!context) {
+        console.error("Failed to get 2D context from canvas.");
+        return "Error capturing frame.";
+      }
+  
+      // Draw the current video frame onto the canvas
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  
+      // Convert the canvas content to a data URL
+      const imageBlob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/jpeg")
+      );
+      if (!imageBlob) {
+        console.error("Failed to create image blob.");
+        return "Error capturing frame.";
+      }
+  
+      // Prepare the form data for the API request
+      const formData = new FormData();
+      formData.append("image", imageBlob, "frame.jpg");
+  
+      // Send the captured frame to the backend
+      const response = await fetch("/api/py/describe-image", {
+        method: "POST",
+        body: formData,
+      });
+  
+      if (!response.ok) {
+        console.error("Error from backend:", response.statusText);
+        return "Error describing frame.";
+      }
+  
+      // Parse the response
+      const data = await response.json();
+      return data.description || "No description available.";
+    } catch (error) {
+      console.error("Error capturing frame description:", error);
+      return "Error capturing frame description.";
+    }
+  };
+  
+
+  const summarizeDescriptions = async (descriptions: string[]): Promise<string> => {
+    try {
+      console.log("looooooo")
+      console.log(descriptions)
+      const response = await fetch("/api/py/summarize-descriptions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ descriptions }),
+      });
+  
+      if (!response.ok) {
+        console.error("Error from backend:", response.statusText);
+        return "Error generating summary.";
+      }
+  
+      const data = await response.json();
+      return data.summary || "No summary available.";
+    } catch (error) {
+      console.error("Error summarizing descriptions:", error);
+      return "Error summarizing descriptions.";
+    }
   };
 
-  const summarizeDescriptions = (descriptions: string[]): string => {
-    return `Summary of ${descriptions.length} descriptions.`; // Replace with actual logic
-  };
-
-  const storeTranscript = (text: string): void => {
-    console.log("Transcript stored:", text); // Replace with actual storage logic
+  const summarizeTranscript = async (transcript: string): Promise<string> => {
+    try {
+      console.log("looooooo")
+      console.log(transcript)
+      const response = await fetch("/api/py/summarize-transcript", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ transcript }),
+      });
+  
+      if (!response.ok) {
+        console.error("Error from backend:", response.statusText);
+        return "Error generating summary.";
+      }
+  
+      const data = await response.json();
+      return data.summary || "No summary available.";
+    } catch (error) {
+      console.error("Error summarizing descriptions:", error);
+      return "Error summarizing descriptions.";
+    }
   };
 
   return (
@@ -132,14 +248,15 @@ export default function Record() {
 
       {/* Right side: Audio transcription */}
       <div className="w-1/2 bg-black p-4">
-        <h2 className="text-xl font-bold mb-4">Audio Transcription</h2>
-        <div className="h-[52%]">
-          audio recording logo
-        </div>
-        <div className=" bg-white h-[40%] text-black p-4 overflow-y-auto border border-gray-300 rounded">
-          <p>{transcript || "Live transcription will appear here..."}</p>
-        </div>
-      </div>
+  <h2 className="text-xl font-bold mb-4">Audio Transcription</h2>
+  <div className="h-[52%] flex items-center justify-center">
+    {/* Using img to display wave.jpg */}
+    <img src="/wave.jpg" alt="Audio Wave" className="w-full h-full object-contain" />
+  </div>
+  <div className="bg-white h-[40%] text-black p-4 overflow-y-auto border border-gray-300 rounded">
+    <p>{transcript || "Live transcription will appear here..."}</p>
+  </div>
+</div>
     </main>
   );
 }
