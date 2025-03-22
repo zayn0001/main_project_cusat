@@ -6,8 +6,8 @@ from datetime import datetime
 import base64
 from pydantic import BaseModel
 from typing import List
+from sentence_transformers import SentenceTransformer
 
-from transformers import pipeline
 from supabase import create_client, Client
 import numpy as np
 
@@ -24,13 +24,13 @@ class SummarizePayload(BaseModel):
 class TranscriptPayload(BaseModel):
     transcript: str  # List of descriptions to summarize
 
-
-    
-
 GROQ_API_KEY = "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"  # Replace with your actual Groq API key
 
 @app.get("/api/py/hi")
 async def hi():
+    #store_summary("hi how are you")
+    answer = fetch_relevant_context("how are you")
+    print(answer)
     return {"message": "hi"}
 
 @app.post("/api/py/describe-image")
@@ -85,6 +85,8 @@ async def describe_image(image: UploadFile = File(...)):
         formatted_datetime = timestamp.strftime("%A, %B %d, %Y %I:%M:%S %p")
         description = formatted_datetime + ": " + description
 
+        
+        store_summary(description)
         return {"description": description}
 
     except Exception as e:
@@ -120,32 +122,16 @@ async def summarize_descriptions(payload: SummarizePayload):
         chat_completion = response.json()
         summary = chat_completion["choices"][0]["message"]["content"]
 
-        time = datetime.now().strftime("%A %-d %B %I:%M %p").lower()
-        summary = time + ": " + summary
+        timestamp = datetime.now()
+        formatted_datetime = timestamp.strftime("%A, %B %d, %Y %I:%M:%S %p")
+        summary = formatted_datetime + ": " + summary
 
         print(summary)
 
-        supabase: Client = create_client(url, key)
-
-        # Initialize the feature extraction pipeline
-        feature_extraction_pipeline = pipeline("feature-extraction", model="Supabase/gte-small")
+        store_summary(summary)
 
         
-        # Generate embeddings
-        output = feature_extraction_pipeline(summary, return_tensors=True)
-
-        # Pooling (mean) and normalization
-        embeddings = np.mean(output[0].numpy(), axis=0)
-        normalized_embeddings = embeddings / np.linalg.norm(embeddings)
-
-        # Convert embedding to a Python list
-        embedding = normalized_embeddings.tolist()
         
-        # Store the vector in Supabase
-        response = supabase.table("documents").insert({
-            "body": summary,
-            "embedding_vector": embedding
-        }).execute()
 
         # Handle response
         print(response.json())
@@ -154,6 +140,19 @@ async def summarize_descriptions(payload: SummarizePayload):
 
 
 
+
+def store_summary(sentence):
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    supabase: Client = create_client(url, key)
+
+    embedding = model.encode(sentence, convert_to_numpy=True)
+    
+    response = supabase.table("documents").insert({
+        "body": sentence,
+        "embedding_vector": embedding.tolist()
+    }).execute()
+
+    print(response)
 
 
 
@@ -164,35 +163,92 @@ async def summarize_descriptions(payload: SummarizePayload):
 async def summarize_descriptions(payload: TranscriptPayload):
     
         descriptions = payload.transcript
-
-        time = datetime.now().strftime("%A %-d %B %I:%M %p").lower()
-        summary = time + ": " + descriptions
+        if not descriptions:
+            return {"summary":""}
+        timestamp = datetime.now()
+        formatted_datetime = timestamp.strftime("%A, %B %d, %Y %I:%M:%S %p")
+        summary = formatted_datetime + ": " + descriptions
 
         print(summary)
 
-        supabase: Client = create_client(url, key)
-
-        # Initialize the feature extraction pipeline
-        feature_extraction_pipeline = pipeline("feature-extraction", model="Supabase/gte-small")
-
-        
-        # Generate embeddings
-        output = feature_extraction_pipeline(summary, return_tensors=True)
-
-        # Pooling (mean) and normalization
-        embeddings = np.mean(output[0].numpy(), axis=0)
-        normalized_embeddings = embeddings / np.linalg.norm(embeddings)
-
-        # Convert embedding to a Python list
-        embedding = normalized_embeddings.tolist()
-        
-        # Store the vector in Supabase
-        response = supabase.table("documents").insert({
-            "body": summary,
-            "embedding_vector": embedding
-        }).execute()
-
-        # Handle response
-        print(response.json())
+        store_summary(summary)
 
         return {"summary": summary}
+
+
+
+
+
+
+def fetch_relevant_context(question: str, top_k: int = 1):
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    supabase: Client = create_client(url, key)
+    
+    question_embedding = model.encode(question, convert_to_numpy=True)
+
+        # Query Supabase to get relevant document matches using RPC
+    response = supabase.rpc(
+        "match_documents",
+        {
+            "query_embedding": question_embedding.tolist(),
+            "match_threshold": 0.1,  # Example threshold
+            "match_count": top_k          # Return top 2 results
+        }
+    ).execute()
+    print(response)
+    print(response.data)
+    return response.data[0]["body"]
+
+
+
+class QuestionPayload(BaseModel):
+    question: str
+
+@app.post("/api/py/get-answer")
+async def get_answer(payload: QuestionPayload):
+    """Generate answer based on the most relevant RAG context."""
+    question = payload.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    try:
+        # Fetch top 2 relevant context matches
+        context_str = fetch_relevant_context(question)
+
+        # Prepare the prompt for Groq API
+        prompt = f"""
+        You are an AI assistant. Answer the question accurately addressing the user directly using the following context.
+        
+        Context:
+        {context_str}
+        
+        Question:
+        {question}
+        
+        Answer the question accurately and clearly, providing any relevant details.
+        """
+
+        # Prepare request to Groq API
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+        data = {
+            "messages": [
+                {"role": "user", "content": prompt},
+            ],
+            "model": "mistral-saba-24b",
+            "max_tokens": 200,
+            "temperature": 0.7,
+        }
+
+        response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data)
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=500, detail=f"Groq API error: {response.text}")
+
+        # Parse and return the response
+        chat_completion = response.json()
+        answer = chat_completion["choices"][0]["message"]["content"].strip()
+
+        return {"answer": answer}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

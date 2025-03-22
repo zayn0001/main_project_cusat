@@ -23,7 +23,7 @@ export default function Record() {
         descriptionsRef.current = updatedDescriptions; // Keep ref in sync
         return updatedDescriptions;
       });
-    }, 60000); // Capture frame every 10 seconds
+    }, 6000); // Capture frame every 10 seconds
 
     const summaryInterval = setInterval(async () => {
       console.log("Summarizing descriptions:", descriptionsRef.current);
@@ -41,7 +41,7 @@ export default function Record() {
       // Clear the ref and state
       transcriptRef.current = "";
       setTranscript("")
-    }, 600000); // Summarize every 1 minute
+    }, 6000); // Summarize every 1 minute
 
     return () => {
       clearInterval(cameraInterval);
@@ -161,13 +161,14 @@ export default function Record() {
         body: formData,
       });
   
-      if (!response.ok) {
+      if (!response.ok) {   
         console.error("Error from backend:", response.statusText);
         return "Error describing frame.";
       }
   
       // Parse the response
       const data = await response.json();
+      console.log(data.description)
       return data.description || "No description available.";
     } catch (error) {
       console.error("Error capturing frame description:", error);
