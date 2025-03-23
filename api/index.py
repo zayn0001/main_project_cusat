@@ -1,4 +1,3 @@
-import io
 from fastapi import FastAPI, File, UploadFile, HTTPException
 import requests
 import json
@@ -7,36 +6,84 @@ import base64
 from pydantic import BaseModel
 from typing import List
 from sentence_transformers import SentenceTransformer
+from TTS.api import TTS
+import re
+from pydub import AudioSegment
+import simpleaudio as sa
+import inflect
+
+
+p = inflect.engine()
+
+def convert_numbers_to_words(input_string):
+    
+    numbers = re.findall(r'\d+', input_string)
+    
+    
+    for num in numbers:
+        word = p.number_to_words(int(num))
+        
+        word = word.replace("-", " ")
+        input_string = input_string.replace(num, word, 1)
+
+    return input_string
+
+
+text = "I have 3 apples and 21 bananas. I need 100 more."
+result = convert_numbers_to_words(text)
+print(result)
+
 
 from supabase import create_client, Client
 import numpy as np
 
-# Initialize Supabase client
+
 url = "https://nrgavxxnufxbyolqznop.supabase.co"
 key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5yZ2F2eHhudWZ4YnlvbHF6bm9wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4NDMyNjgsImV4cCI6MjA1MTQxOTI2OH0.ze2PsT5sVGgZsGAouEtgIf--JBWwwbvPhhcwSurF_pg"
-### Create FastAPI instance with custom docs and openapi url
+
 app = FastAPI(docs_url="/api/py/docs", openapi_url="/api/py/openapi.json")
 
+
+tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", gpu=False)
+
+AUDIO_SAVE_PATH = "input_audio.mp3"
+ANSWER_PATH = "final_answer.wav"
+
+
 class SummarizePayload(BaseModel):
-    descriptions: List[str]  # List of descriptions to summarize
+    descriptions: List[str]  
 
 
 class TranscriptPayload(BaseModel):
-    transcript: str  # List of descriptions to summarize
+    transcript: str  
 
-GROQ_API_KEY = "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"  # Replace with your actual Groq API key
+GROQ_API_KEY = "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"  
 
 @app.get("/api/py/hi")
 async def hi():
-    #store_summary("hi how are you")
+    
     answer = fetch_relevant_context("how are you")
     print(answer)
     return {"message": "hi"}
 
+
+@app.post("/api/py/clone-voice")
+async def clone_voice(audio: UploadFile = File(...)):
+    """
+    Endpoint to upload a voice sample, clone the voice, and generate cloned audio.
+    """
+    audio_path = AUDIO_SAVE_PATH
+    with open(audio_path, "wb+") as f:
+        f.write(await audio.read())
+
+    return {
+        "message": "Cloned voice generated successfully!"
+    }
+
 @app.post("/api/py/describe-image")
 async def describe_image(image: UploadFile = File(...)):
     try:
-        # Read the uploaded image
+        
         image_bytes = await image.read()
         encoded_image = base64.b64encode(image_bytes).decode("utf-8")
         print(encoded_image[:20])
@@ -71,16 +118,16 @@ async def describe_image(image: UploadFile = File(...)):
             'temperature': 0
         }
 
-        # Make the API request
+        
         response = requests.post('https://api.groq.com/openai/v1/chat/completions', headers=headers, json=data)
         response.raise_for_status()
 
-        # Parse the API response
+        
         chat_completion = response.json()
         parsed_content = json.loads(chat_completion['choices'][0]['message']['content'])
         description = parsed_content.get('description', 'No commentary generated.')
 
-        # Add timestamp
+        
         timestamp = datetime.now()
         formatted_datetime = timestamp.strftime("%A, %B %d, %Y %I:%M:%S %p")
         description = formatted_datetime + ": " + description
@@ -102,7 +149,7 @@ async def summarize_descriptions(payload: SummarizePayload):
         if not descriptions:
             return {"summary": "No descriptions to summarize."}
 
-        # Prepare request to Groq Llama API
+        
         headers = {'Authorization': f'Bearer {GROQ_API_KEY}'}
 
         data = {
@@ -133,7 +180,7 @@ async def summarize_descriptions(payload: SummarizePayload):
         
         
 
-        # Handle response
+        
         print(response.json())
 
         return {"summary": summary}
@@ -186,18 +233,19 @@ def fetch_relevant_context(question: str, top_k: int = 1):
     
     question_embedding = model.encode(question, convert_to_numpy=True)
 
-        # Query Supabase to get relevant document matches using RPC
+        
     response = supabase.rpc(
         "match_documents",
         {
             "query_embedding": question_embedding.tolist(),
-            "match_threshold": 0.1,  # Example threshold
-            "match_count": top_k          # Return top 2 results
+            "match_threshold": 0.1,  
+            "match_count": top_k          
         }
     ).execute()
     print(response)
     print(response.data)
     return response.data[0]["body"]
+
 
 
 
@@ -212,10 +260,10 @@ async def get_answer(payload: QuestionPayload):
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
     try:
-        # Fetch top 2 relevant context matches
+        
         context_str = fetch_relevant_context(question)
 
-        # Prepare the prompt for Groq API
+        
         prompt = f"""
         You are an AI assistant. Answer the question accurately addressing the user directly using the following context.
         
@@ -228,7 +276,7 @@ async def get_answer(payload: QuestionPayload):
         Answer the question accurately and clearly, providing any relevant details.
         """
 
-        # Prepare request to Groq API
+        
         headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
         data = {
             "messages": [
@@ -244,11 +292,36 @@ async def get_answer(payload: QuestionPayload):
         if response.status_code != 200:
             raise HTTPException(status_code=500, detail=f"Groq API error: {response.text}")
 
-        # Parse and return the response
+        
         chat_completion = response.json()
         answer = chat_completion["choices"][0]["message"]["content"].strip()
 
-        return {"answer": answer}
+        simple_answer = convert_numbers_to_words(answer)
+
+        tts.tts_to_file(
+            text=simple_answer,
+            file_path=ANSWER_PATH,
+            speaker_wav=["input_audio.mp3"],
+            language="en"
+        )
+
+        print("Answer generated and saved as 'final_answer.wav'")
+
+        
+        audio = AudioSegment.from_wav("final_answer.wav")
+
+        
+        sa.play_buffer(
+            audio.raw_data,
+            num_channels=audio.channels,
+            bytes_per_sample=audio.sample_width,
+            sample_rate=audio.frame_rate,
+        )
+
+
+        return {"answer":answer}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+

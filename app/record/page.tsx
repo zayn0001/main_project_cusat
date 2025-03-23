@@ -7,7 +7,7 @@ export default function Record() {
   const [isListening, setIsListening] = useState<boolean>(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Ref to store the latest descriptions array
+  
   const descriptionsRef = useRef<string[]>([]);
   const transcriptRef = useRef<string>("");
 
@@ -17,19 +17,19 @@ export default function Record() {
       const description = await captureFrameDescription();
       console.log(description);
 
-      // Update state and ref
+      
       setDescriptions((prev) => {
         const updatedDescriptions = [...prev, description];
-        descriptionsRef.current = updatedDescriptions; // Keep ref in sync
+        descriptionsRef.current = updatedDescriptions; 
         return updatedDescriptions;
       });
-    }, 6000); // Capture frame every 10 seconds
+    }, 6000); 
 
     const summaryInterval = setInterval(async () => {
       console.log("Summarizing descriptions:", descriptionsRef.current);
       const summaryk = await summarizeDescriptions(descriptionsRef.current);
       console.log(summaryk);
-      // Clear the ref and state
+      
       descriptionsRef.current = [];
       setDescriptions([]);
 
@@ -38,10 +38,10 @@ export default function Record() {
       //console.log("Summarizing descriptions:", descriptionsRef.current);
       const transcripttotal = await summarizeTranscript(transcriptRef.current);
       console.log(transcripttotal);
-      // Clear the ref and state
+      
       transcriptRef.current = "";
       setTranscript("")
-    }, 6000); // Summarize every 1 minute
+    }, 6000); 
 
     return () => {
       clearInterval(cameraInterval);
@@ -95,7 +95,7 @@ export default function Record() {
     };
   }, [isListening]);
 
-  // Access webcam and set the video feed
+  
   useEffect(() => {
     const startCamera = async () => {
       try {
@@ -114,7 +114,7 @@ export default function Record() {
       if (videoRef.current && videoRef.current.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
         const tracks = stream.getTracks();
-        tracks.forEach(track => track.stop()); // Stop all media tracks
+        tracks.forEach(track => track.stop()); 
       }
     };
   }, []);
@@ -126,7 +126,7 @@ export default function Record() {
     }
   
     try {
-      // Create a canvas to capture the current frame
+      
       const canvas = document.createElement("canvas");
       const video = videoRef.current;
   
@@ -139,10 +139,10 @@ export default function Record() {
         return "Error capturing frame.";
       }
   
-      // Draw the current video frame onto the canvas
+      
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
   
-      // Convert the canvas content to a data URL
+      
       const imageBlob = await new Promise<Blob | null>((resolve) =>
         canvas.toBlob(resolve, "image/jpeg")
       );
@@ -151,11 +151,11 @@ export default function Record() {
         return "Error capturing frame.";
       }
   
-      // Prepare the form data for the API request
+      
       const formData = new FormData();
       formData.append("image", imageBlob, "frame.jpg");
   
-      // Send the captured frame to the backend
+      
       const response = await fetch("/api/py/describe-image", {
         method: "POST",
         body: formData,
@@ -166,7 +166,7 @@ export default function Record() {
         return "Error describing frame.";
       }
   
-      // Parse the response
+      
       const data = await response.json();
       console.log(data.description)
       return data.description || "No description available.";

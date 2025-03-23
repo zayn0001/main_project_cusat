@@ -2,14 +2,15 @@
 import { useEffect, useRef, useState } from "react";
 
 export default function Ask() {
-  const [transcript, setTranscript] = useState<string>(""); // To store live transcript
-  const [isRecording, setIsRecording] = useState<boolean>(false); // State for recording status
-  const recognitionRef = useRef<any>(null); // Ref to store recognition instance
-  const transcriptRef = useRef<string>(""); // Ref to store the latest transcript
+  const [transcript, setTranscript] = useState<string>(""); 
+  const [isRecording, setIsRecording] = useState<boolean>(false); 
+  const recognitionRef = useRef<any>(null); 
+  const transcriptRef = useRef<string>(""); 
 
-  // Get answer from backend
+  
   const getAnswer = async (): Promise<string> => {
     try {
+      
       const response = await fetch("/api/py/get-answer", {
         method: "POST",
         headers: {
@@ -17,21 +18,28 @@ export default function Ask() {
         },
         body: JSON.stringify({ question: transcript }),
       });
-      
-      if (!response.ok) {
-        console.error("Error from backend:", response.statusText);
-        return "I do not know the answer to that question";
-      }
 
-      const data = await response.json();
-      return (data.answer as string) || "No answer available.";
+      if (response.ok) {
+        const data = await response.json();
+        const { audio, answer } = data;
+    
+        
+        const audioElement = new Audio(audio);
+        audioElement.play();
+
+        return answer
+    
+      } else {
+        console.error("Failed to fetch audio.");
+        return "I do not know the answer to that question"
+      }
     } catch (error) {
       console.error("Error getting answer:", error);
       return "No answer available.";
     }
   };
 
-  // Initialize speech recognition
+  
   useEffect(() => {
     if (!("SpeechRecognition" in window || "webkitSpeechRecognition" in window)) {
       console.error("Speech Recognition API is not supported in this browser.");
@@ -45,7 +53,7 @@ export default function Ask() {
     recognitionRef.current.interimResults = true;
     recognitionRef.current.lang = "en-US";
 
-    // Process results
+    
     recognitionRef.current.onresult = (event: any) => {
       let interimTranscript = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -56,7 +64,7 @@ export default function Ask() {
           interimTranscript += event.results[i][0].transcript;
         }
       }
-      setTranscript(transcriptRef.current + interimTranscript); // Show interim + final results
+      setTranscript(transcriptRef.current + interimTranscript); 
     };
 
     recognitionRef.current.onerror = (event: { error: any }) => {
@@ -68,39 +76,20 @@ export default function Ask() {
     };
   }, []);
 
-  // Speak the answer using SpeechSynthesis
-  const speakAnswer = (text: string) => {
-    const synth = window.speechSynthesis;
-    if (!synth) {
-      console.error("SpeechSynthesis API is not supported in this browser.");
-      return;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    utterance.rate = 1; // Speed (1 is normal, 0.5 is slower, 2 is faster)
-    utterance.pitch = 1; // Pitch of voice
-    utterance.volume = 1; // Volume (0.0 to 1.0)
-
-    synth.speak(utterance);
-  };
-
-  // Start or stop recording
+  
   const toggleRecording = async () => {
-    if (isRecording) {
+    if (isRecording) 
+      {
       recognitionRef.current.stop();
-      setTranscript("Processing... Please wait.");
+      setTranscript("Processing... Please wait.")
       const answer = await getAnswer();
       console.log("Final Transcription:", transcript);
       console.log("Final Answer:", answer);
-      setTranscript(answer); // Display answer in the UI
+      setTranscript(answer); 
 
-      // Speak the answer aloud
-      speakAnswer(answer);
-
-      transcriptRef.current = ""; // Reset for next query
+      transcriptRef.current = ""; 
     } else {
-      transcriptRef.current = ""; // Reset on start
+      transcriptRef.current = ""; 
       setTranscript("");
       recognitionRef.current.start();
     }
