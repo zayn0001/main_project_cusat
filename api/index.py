@@ -29,11 +29,6 @@ def convert_numbers_to_words(input_string):
     return input_string
 
 
-text = "I have 3 apples and 21 bananas. I need 100 more."
-result = convert_numbers_to_words(text)
-print(result)
-
-
 from supabase import create_client, Client
 import numpy as np
 
@@ -133,7 +128,7 @@ async def describe_image(image: UploadFile = File(...)):
         description = formatted_datetime + ": " + description
 
         
-        store_summary(description)
+        #store_summary(description)
         return {"description": description}
 
     except Exception as e:

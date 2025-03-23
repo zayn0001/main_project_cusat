@@ -23,6 +23,12 @@ export default function Record() {
         descriptionsRef.current = updatedDescriptions; 
         return updatedDescriptions;
       });
+
+      const transcripttotal = await summarizeTranscript(transcriptRef.current);
+      console.log(transcripttotal);
+      
+      transcriptRef.current = "";
+      setTranscript("")
     }, 6000); 
 
     const summaryInterval = setInterval(async () => {
@@ -33,15 +39,7 @@ export default function Record() {
       descriptionsRef.current = [];
       setDescriptions([]);
 
-
-
-      //console.log("Summarizing descriptions:", descriptionsRef.current);
-      const transcripttotal = await summarizeTranscript(transcriptRef.current);
-      console.log(transcripttotal);
-      
-      transcriptRef.current = "";
-      setTranscript("")
-    }, 6000); 
+    }, 60000); 
 
     return () => {
       clearInterval(cameraInterval);
